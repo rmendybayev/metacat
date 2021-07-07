@@ -1,0 +1,239 @@
+#
+# Copyright 2016 Netflix, Inc.
+# Modifications copyright (C) 2021 EPAM Systems, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+#
+
+version: "3"
+
+services:
+  metacat:
+    image: tomcat:8.0-jre8
+    depends_on:
+      - hive-metastore
+      - hive-metastore-db
+      - postgresql
+      - cassandra
+    ports:
+      - '8080'
+      - '8000'
+      - '12001'
+      - '12003'
+      - '12004'
+      - '80'
+    volumes:
+      - ../build/metacat-war-expanded/ROOT:/usr/local/tomcat/webapps/ROOT
+      - ./resources/logging.properties:/usr/local/tomcat/conf/logging.properties
+      - ../build/logs/metacat:/usr/local/tomcat/logs
+      - ../build/logs/metacat:/var/log/metacat
+      - ./etc-metacat:/etc/metacat:ro
+      - ./etc-metacat/data/:/tmp/data
+    environment:
+      VIRTUAL_HOST: metacat.docker
+      JAVA_OPTS: '-ea
+                -Xms256m
+                -Xmx768m
+                -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=8000
+                -noverify
+                -Dnetflix.environment=test
+                -Dlogging.path=/var/log/metacat
+                -Dnetflix.discovery.registration.enabled=false
+                -Dnetflix.appinfo.validateInstanceId=false
+                -Dnetflix.appinfo.vipAddress=
+                -Dnetflix.appinfo.metadata.route53NamePrefix=
+                -Dnetflix.appinfo.metadata.enableRoute53=false
+                -Dmetacat.plugin.config.location=/etc/metacat/catalog
+                -Dmetacat.metrics.default-registry.enabled=true
+                -Dmetacat.mysqlmetadataservice.enabled=true
+                -Dmetacat.type.converter=com.netflix.metacat.connector.pig.converters.PigTypeConverter
+                -Dmetacat.definition.metadata.delete.enableForTable=false
+                -Dmetacat.definition.metadata.delete.enableDeleteForQualifiedNames=hive-metastore/hsmoke_ddb,hive-metastore/hsmoke_ddb1/test_create_table1,cassandra-310,embedded-hive-metastore,embedded-fast-hive-metastore/fsmoke_db1,embedded-fast-hive-metastore/fsmoke_ddb1,embedded-fast-hive-metastore/shard,embedded-fast-hive-metastore/fsmoke_db4,s3-mysql-db,mysql-56-db
+                -Dmetacat.hive.metastore.batchSize=10
+                -Dmetacat.hive.iceberg.enabled=true
+                -Dmetacat.usermetadata.config.location=/etc/metacat/usermetadata.properties
+                -Dmetacat.cache.enabled=true
+                -Dmetacat.authorization.enabled=true
+                -Dmetacat.authorization.createAcl.createAclStr=embedded-fast-hive-metastore/fsmoke_acl:metacat-prod
+                -Dmetacat.authorization.deleteAcl.deleteAclStr=embedded-fast-hive-metastore/fsmoke_acl:metacat-prod
+                -Dmetacat.service.tables.error.list.partitions.threshold=100
+                -Dmetacat.table.delete.noDeleteOnTags=do_not_drop
+                -Dmetacat.table.rename.noRenameOnTags=do_not_rename
+                -Dmetacat.event.updateIcebergTablePostEventEnabled=true'
+    labels:
+      - "com.netflix.metacat.oss.test"
+      - "com.netflix.metacat.oss.test.war"
+  ##REMOVED cassandra and druid container to reduce the memory demand (orig git hash 43890dd)
+  ##TODO: We need to add them back with light images
+  data-explorer:
+    image: nfdataexplorer:1.0.0-single
+    depends_on:
+      - cassandra
+    ports:
+      - '80'
+    command: yarn start
+    environment:
+      - CASSANDRA_HOST=cassandra
+      - DATA_EXPLORER_CONFIG_NAME=custom-config
+    volumes:
+      - ${PWD}/data:/apps/nf-data-explorer/data
+    labels:
+      - "com.netflix.metacat.oss.test.dataexpl"
+  cassandra:
+    image: cassandra:3.10
+    volumes:
+      - ./datastores/cassandra/:/init
+    labels:
+      - "com.netflix.metacat.oss.test"
+    environment:
+      JVM_OPTS: '-Xms256M -Xmx1024M'
+    ports:
+      - '9042'
+  hive-metastore-db:
+    image: mysql:5.7
+    volumes:
+      - ./datastores/mysql/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d:ro
+    environment:
+      - MYSQL_ROOT_PASSWORD=root_password
+      - MYSQL_USER=metacat_user
+      - MYSQL_PASSWORD=metacat_user_password
+      - MYSQL_DATABASE=metacat
+    ports:
+      - '3306'
+    labels:
+      - "com.netflix.metacat.oss.test"
+  postgresql:
+    image: postgres:9.6
+    volumes:
+      - ./datastores/postgres/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d:ro
+    environment:
+      - POSTGRES_USER=metacat_user
+      - POSTGRES_PASSWORD=metacat_user_password
+      - POSTGRES_DB=metacat
+    labels:
+      - "com.netflix.metacat.oss.test"
+  minio:
+    image: minio/minio:RELEASE.2021-07-15T22-27-34Z
+    volumes:
+      - data1-1:/data1
+      - data1-2:/data2
+      - data1-3:/data3
+      - data1-4:/data4
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio123
+    command: server --console-address ":9001" http://minio/data1 http://minio/data2 http://minio/data3 http://minio/data4
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+  hive-metastore:
+    image: rmendybayev/hive-metastore:1.2.2
+    depends_on:
+      - hive-metastore-db
+    ports:
+      - '9083'
+      - '8005'
+    environment:
+      - HIVE_METASTORE_HADOOP_OPTS=-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=8005 -Dhive.metastore.client.socket.timeout=60
+      - S3_ENDPOINT=http://nginx:9000
+      - S3_ACCESS_KEY=minio
+      - S3_SECRET_KEY=minio123
+    labels:
+      - "com.netflix.metacat.oss.test"
+      - "com.netflix.metacat.oss.test.hive"
+  storage-barrier:
+    image: martin/wait:latest
+    depends_on:
+      - hive-metastore-db
+      - postgresql
+      - cassandra
+    environment:
+      - TARGETS=postgresql:5432,hive-metastore-db:3306,cassandra:9042
+    labels:
+      - "com.netflix.metacat.oss.test"
+  service-barrier:
+    image: martin/wait:latest
+    depends_on:
+      - hive-metastore
+      - minio
+    environment:
+      - TARGETS=hive-metastore:9083,minio:9000
+    labels:
+      - "com.netflix.metacat.oss.test"
+  metacat-barrier:
+    image: martin/wait:latest
+    depends_on:
+      - metacat
+      - data-explorer
+      - spark
+    environment:
+      - TARGETS=metacat:8080,metacat:12001,metacat:12003,metacat:12004,data-explorer:80
+      - TIMEOUT=360
+    labels:
+      - "com.netflix.metacat.oss.test"
+  spark:
+    image: rmendybayev/spark:2.4.6
+    volumes:
+      - ../spark/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    ports:
+      - '8080:8080'
+      - '4040:4040'
+  spark-worker-1:
+    image: rmendybayev/spark:2.4.6
+    volumes:
+      - ../spark/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark:7077
+      - SPARK_WORKER_MEMORY=1G
+      - SPARK_WORKER_CORES=1
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    ports:
+      - '8081:8081'
+  spark-worker-2:
+    image: rmendybayev/spark:2.4.6
+    volumes:
+      - ../spark/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark:7077
+      - SPARK_WORKER_MEMORY=1G
+      - SPARK_WORKER_CORES=1
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    ports:
+      - '18081:8081'
+
+volumes:
+  data1-1:
+  data1-2:
+  data1-3:
+  data1-4:
+

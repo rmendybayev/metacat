@@ -1,6 +1,7 @@
 /*
  *
  *  Copyright 2017 Netflix, Inc.
+ *  Modifications copyright (C) 2021 EPAM Systems, Inc.
  *
  *     Licensed under the Apache License, Version 2.0 (the "License");
  *     you may not use this file except in compliance with the License.
@@ -146,6 +147,7 @@ configure(javaProjects) {
             dependency("com.esotericsoftware.kryo:kryo:2.22")
             dependency("org.apache.iceberg:iceberg-spark-runtime:${iceberg_version}")
             dependency("com.datastax.cassandra:cassandra-driver-core:3.7.2")
+            dependency("io.dropwizard.metrics:metrics-core:3.2.2")
         }
     }
 
@@ -163,11 +165,13 @@ configure(javaProjects) {
         /*******************************
          * Compile Dependencies
          *******************************/
+        annotationProcessor 'org.projectlombok:lombok:1.18.8'
 
         /*******************************
          * Provided Dependencies
          *******************************/
         compileOnly("com.github.spotbugs:spotbugs-annotations")
+        compileOnly("org.projectlombok:lombok")
         /*******************************
          * Runtime Dependencies
          *******************************/

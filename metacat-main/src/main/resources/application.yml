@@ -35,6 +35,14 @@ metacat:
       location: /etc/catalog
   swagger:
     enabled: true
+  elasticsearch:
+    enabled: true
+    cluster:
+      name: docker-cluster
+      port: 9300
+      nodes: es-node
+    index:
+      name: metacat-es
 
 netflix:
   appinfo:
