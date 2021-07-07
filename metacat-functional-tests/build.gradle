@@ -1,6 +1,7 @@
 /*
  *
  *  Copyright 2017 Netflix, Inc.
+ *  Modifications copyright (C) 2021 EPAM Systems, Inc.
  *
  *     Licensed under the Apache License, Version 2.0 (the "License");
  *     you may not use this file except in compliance with the License.
@@ -84,7 +85,7 @@ task expandWar(type: Copy) {
 task startMetacatCluster(type: Exec) {
     dependsOn 'expandWar'
     if (project.ext.startCluster) {
-        commandLine 'sh', rootProject.file('scripts/start_metacat_test_cluster.sh'), project.file('metacat-test-cluster/docker-compose.yml')
+        commandLine 'sh', rootProject.file('scripts/start_metacat_test_cluster.sh'), project.file('metacat-test-cluster/docker-compose-dataexp.yml')
     } else {
         commandLine '/bin/echo', 'skipping cluster start'
     }
@@ -92,7 +93,7 @@ task startMetacatCluster(type: Exec) {
 
 task stopMetacatCluster(type: Exec) {
     if (project.ext.stopCluster) {
-        commandLine 'sh', rootProject.file('scripts/stop_metacat_test_cluster.sh'), project.file('metacat-test-cluster/docker-compose.yml')
+        commandLine 'sh', rootProject.file('scripts/stop_metacat_test_cluster.sh'), project.file('metacat-test-cluster/docker-compose-dataexp.yml')
     } else {
         commandLine '/bin/echo', 'skipping cluster stop'
     }
@@ -107,6 +108,7 @@ task metacatPorts {
     ext.metacat_embedded_fast_hive_thrift_port = null
     ext.hive_thrift_port = null
     ext.hive_debug_port = null
+    ext.data_explorer_port = null
 
     doLast {
         def get_docker_port = { String label, int exposed_port ->
@@ -126,6 +128,7 @@ task metacatPorts {
         ext.metacat_embedded_fast_hive_thrift_port = get_docker_port('com.netflix.metacat.oss.test.war', 12004)
         ext.hive_thrift_port = get_docker_port('com.netflix.metacat.oss.test.hive', 9083)
         ext.hive_debug_port = get_docker_port('com.netflix.metacat.oss.test.hive', 8005)
+        ext.data_explorer_port = get_docker_port('com.netflix.metacat.oss.test.dataexpl', 80)
 
         println '++ Container Exposed ports ++'
         println '+++ Metacat Web Port:' + ext.http_port
@@ -135,6 +138,7 @@ task metacatPorts {
         println '+++ Metacat Embedded Fast Hive Thrift Port:' + ext.metacat_embedded_fast_hive_thrift_port
         println '+++ Metacat Hive Metastore Port:' + ext.hive_thrift_port
         println '+++ Metacat Hive Metastore Debug Port:' + ext.hive_debug_port
+        println '+++ Metacat Data Explorer Port:' + ext.data_explorer_port
     }
 }
 
