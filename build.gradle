@@ -165,11 +165,13 @@ configure(javaProjects) {
         /*******************************
          * Compile Dependencies
          *******************************/
+        annotationProcessor 'org.projectlombok:lombok:1.18.8'
 
         /*******************************
          * Provided Dependencies
          *******************************/
         compileOnly("com.github.spotbugs:spotbugs-annotations")
+        compileOnly("org.projectlombok:lombok")
         /*******************************
          * Runtime Dependencies
          *******************************/
