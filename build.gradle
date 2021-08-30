@@ -237,3 +237,80 @@ configure(javaProjects) {
         exclude 'com/netflix/metacat/common/server/partition/parser/**'
     }
 }
+
+/****************
+ * Docker Tasks
+ */
+ext.isDockerRunning = {
+    def dummyOutputStream = new OutputStream() {
+        @Override
+        void write(int b) {}
+    }
+    // See: https://docs.docker.com/config/daemon/#check-whether-docker-is-running
+    def dockerRunning = exec {
+        executable "docker"
+        args "info"
+        ignoreExitValue true
+        standardOutput dummyOutputStream
+        errorOutput dummyOutputStream
+    }
+    if (dockerRunning.exitValue != 0) {
+        println("Docker not running.")
+    }
+    return dockerRunning.exitValue == 0
+}
+ext.getDockerTags = { String appName, String projectVersion ->
+    def tags = ["netflixoss/${appName}:${projectVersion}"]
+    if (!projectVersion.contains("SNAPSHOT") && !projectVersion.contains("-rc.")) {
+        tags.add("netflixoss/${appName}:latest")
+        tags.add("netflixoss/${appName}:latest.release")
+    } else if (projectVersion.contains("-rc.")) {
+        tags.add("netflixoss/${appName}:latest.candidate")
+    } else {
+        tags.add("netflixoss/${appName}:latest.snapshot")
+    }
+    if (project.hasProperty("docker.registry")) {
+        def tagsWithRepo = tags.collect()
+        tagsWithRepo.each {tags.add("${project.getProperty('docker.registry')}/${it}")}
+        tags.removeAll(tagsWithRepo)
+    }
+    return tags
+}
+
+
+task dockerBuildAppImage(type: Exec, group: "Docker", description: "Container task to build docker image") {
+    onlyIf {
+        rootProject.ext.isDockerRunning()
+    }
+    dependsOn ':metacat-functional-tests:expandWar'
+
+    inputs.dir "${project.projectDir}"
+    workingDir "${project.projectDir}"
+
+    def commandArgs = new ArrayList<>()
+    commandArgs.add("docker")
+    commandArgs.add("build")
+    commandArgs.add("--force-rm")
+    for (String tag : rootProject.ext.getDockerTags("metacat", project.version.toString())) {
+        commandArgs.add("-t")
+        commandArgs.add(tag)
+    }
+    commandArgs.add(".")
+
+    commandLine commandArgs
+}
+
+task dockerPushGcr(group: "Docker", description: "Push the built docker app image to Gcr") {
+    onlyIf {
+        rootProject.ext.isDockerRunning() && System.getenv("GCR")
+    }
+    dependsOn ":dockerBuildAppImage"
+    doLast {
+        for (String tag : rootProject.ext.getDockerTags("metacat", project.version.toString())) {
+            exec {
+                commandLine "docker", "push", tag
+            }
+        }
+    }
+
+}

@@ -1,0 +1,17 @@
+{{ if .Values.catalogs.configMap }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.catalogs.configMap }}
+  labels: {{ include "common.labels.standard" . | nindent 4 }}
+data:
+  hive-metastore.properties: |-
+    connector.name=hive
+    metacat.thrift.port=12001
+    metacat.has-data-external=true
+    metacat.cluster.name={{ .Values.catalogs.hiveMetastore.name }}
+    metacat.cluster.account-id={{ .Values.catalogs.hiveMetastore.accountId }}
+    metacat.cluster.region={{ .Values.catalogs.hiveMetastore.region }}
+    metacat.cluster.env={{ .Values.catalogs.hiveMetastore.env }}
+    hive.metastore.uris=thrift://{{ .Values.catalogs.hiveMetastore.uri }}:9083
+{{- end }}
