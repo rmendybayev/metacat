@@ -1,0 +1,50 @@
+# Default values for metacat-helm.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+app:
+  service:
+    name: metacat
+    port: 8080
+  image:
+    repository: "us.gcr.io/or2-msq-epmc-bdcc-t1iylu/netflixoss/metacat-web"
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+catalogs:
+  path: "/etc/metacat/catalog"
+  configMap: "catalogs"
+  userMetadata:
+    dbHost: "user-metadata-mysql"
+  hiveMetastore:
+    enabled: true
+    uri: "10.10.20.20"
+    name: ""
+    accountId: ""
+    region: ""
+    env: ""
+gke:
+  enabled: true
+  ui:
+    name: metacat-api
+    ip: 10.10.20.30
+
+
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
