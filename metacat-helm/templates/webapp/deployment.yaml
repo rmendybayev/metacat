@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ printf "%s-app" (include "common.names.fullname" .)}}
+  labels: {{ include "common.labels.standard" . | nindent 4 }}
+    app.kubernetes.io/component: app
+spec:
+  selector:
+    matchLabels: {{ include "common.labels.matchLabels" . | nindent 6 }}
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      labels: {{ include "common.labels.standard" . | nindent 8 }}
+        app.kubernetes.io/component: app
+    spec:
+      volumes:
+      {{- if .Values.catalogs.configMap }}
+        - name: catalogs-property-files
+          configMap:
+            name: {{ .Values.catalogs.configMap }}
+      {{- end }}
+        - name: user-metadata-property
+          configMap:
+            name: {{ printf "%s-cm" (include "common.names.fullname" .) }}
+      containers:
+        - name: metacat-app
+          image: {{ .Values.app.image.repository}}:{{ .Values.app.image.tag }}
+          imagePullPolicy: {{ .Values.app.image.pullPolicy}}
+          env:
+            - name: SPRING_APPLICATION_JSON
+              valueFrom:
+                configMapKeyRef:
+                  key: metacat-config.json
+                  name: {{ printf "%s-cm" (include "common.names.fullname" .)}}
+          volumeMounts:
+            - mountPath: "/etc/metacat/usermetadata.properties"
+              name: user-metadata-property
+          {{- if .Values.catalogs.configMap }}
+            - mountPath: {{ .Values.catalogs.path }}
+              name: catalogs-property-files
+          {{- end }}
+      restartPolicy: Always
+
