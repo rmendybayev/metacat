@@ -1,7 +1,6 @@
 /*
  *
  *  Copyright 2017 Netflix, Inc.
- *  Modifications copyright (C) 2021 EPAM Systems, Inc.
  *
  *     Licensed under the Apache License, Version 2.0 (the "License");
  *     you may not use this file except in compliance with the License.
@@ -34,7 +33,6 @@ dependencies {
     /*******************************
      * Runtime Dependencies
      *******************************/
-    implementation("io.dropwizard.metrics:metrics-core")
 
     /*******************************
      * Test Dependencies

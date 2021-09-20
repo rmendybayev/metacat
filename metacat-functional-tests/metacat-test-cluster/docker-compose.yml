@@ -108,37 +108,6 @@ services:
         labels:
           - "com.netflix.metacat.oss.test"
           - "com.netflix.metacat.oss.test.hive"
-    elasticsearch:
-      image: docker.elastic.co/elasticsearch/elasticsearch:5.4.1
-      container_name: elasticsearch
-      hostname: es-node
-      environment:
-        - cluster.name=docker-cluster
-        - node.name=es-node
-        - bootstrap.memory_lock=true
-        - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-        - discovery.type=single-node
-        - xpack.security.enabled=false
-        - network.bind_host=0
-      ulimits:
-        memlock:
-          soft: -1
-          hard: -1
-      mem_limit: 1g
-      volumes:
-        - esdata1:/usr/share/elasticsearch/data
-      ports:
-        - '9200:9200'
-    kibana:
-        image: 'docker.elastic.co/kibana/kibana:5.4.1'
-        depends_on:
-          - elasticsearch
-        container_name: kibana
-        environment:
-          - SERVER_NAME=kibana.local
-          - ELASTICSEARCH_URL=http://es-node:9200
-        ports:
-          - '5601:5601'
     storage-barrier:
         image: martin/wait:latest
         depends_on:
@@ -152,10 +121,8 @@ services:
         image: martin/wait:latest
         depends_on:
             - hive-metastore
-            - elasticsearch
-            - kibana
         environment:
-            - TARGETS=hive-metastore:9083, elasticsearch:9200, kibana:5601
+            - TARGETS=hive-metastore:9083
         labels:
           - "com.netflix.metacat.oss.test"
     metacat-barrier:
@@ -167,6 +134,3 @@ services:
             - TIMEOUT=360
         labels:
           - "com.netflix.metacat.oss.test"
-volumes:
-  esdata1:
-    driver: local

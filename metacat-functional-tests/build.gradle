@@ -1,7 +1,6 @@
 /*
  *
  *  Copyright 2017 Netflix, Inc.
- *  Modifications copyright (C) 2021 EPAM Systems, Inc.
  *
  *     Licensed under the Apache License, Version 2.0 (the "License");
  *     you may not use this file except in compliance with the License.
@@ -108,7 +107,6 @@ task metacatPorts {
     ext.metacat_embedded_fast_hive_thrift_port = null
     ext.hive_thrift_port = null
     ext.hive_debug_port = null
-    ext.data_explorer_port = null
 
     doLast {
         def get_docker_port = { String label, int exposed_port ->
@@ -137,7 +135,6 @@ task metacatPorts {
         println '+++ Metacat Embedded Fast Hive Thrift Port:' + ext.metacat_embedded_fast_hive_thrift_port
         println '+++ Metacat Hive Metastore Port:' + ext.hive_thrift_port
         println '+++ Metacat Hive Metastore Debug Port:' + ext.hive_debug_port
-//        println '+++ Metacat Data Explorer Port:' + ext.data_explorer_port
     }
 }
 

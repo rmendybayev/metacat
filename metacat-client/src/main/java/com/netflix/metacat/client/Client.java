@@ -18,6 +18,8 @@
 package com.netflix.metacat.client;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.guava.GuavaModule;
+import com.fasterxml.jackson.module.jaxb.JaxbAnnotationModule;
 import com.google.common.base.Preconditions;
 import com.netflix.metacat.client.api.TagV1;
 import com.netflix.metacat.client.module.JacksonDecoder;
@@ -65,7 +67,9 @@ public final class Client {
         final MetacatJsonLocator metacatJsonLocator = new MetacatJsonLocator();
         final ObjectMapper mapper = metacatJsonLocator
             .getPrettyObjectMapper()
-            .copy();
+            .copy()
+            .registerModule(new GuavaModule())
+            .registerModule(new JaxbAnnotationModule());
 
         log.info("Connecting to {}", host);
         this.host = host;

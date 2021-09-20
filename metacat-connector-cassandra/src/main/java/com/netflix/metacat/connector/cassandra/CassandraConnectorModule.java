@@ -1,7 +1,6 @@
 /*
  *
  *  Copyright 2017 Netflix, Inc.
- *  Modifications copyright (C) 2021 EPAM Systems, Inc.
  *
  *     Licensed under the Apache License, Version 2.0 (the "License");
  *     you may not use this file except in compliance with the License.
@@ -19,7 +18,6 @@
 package com.netflix.metacat.connector.cassandra;
 
 import com.datastax.driver.core.Cluster;
-import com.datastax.driver.core.ProtocolVersion;
 import com.google.common.collect.ImmutableList;
 import com.google.inject.AbstractModule;
 import com.google.inject.Provides;
@@ -92,11 +90,7 @@ public class CassandraConnectorModule extends AbstractModule {
     @Provides
     @Singleton
     Cluster provideCluster() {
-        final Cluster.Builder builder = Cluster
-            .builder()
-            .withClusterName(this.catalogShardName)
-            .withoutJMXReporting() //TODO: Remove and fix NoClassDefFound
-            .withProtocolVersion(ProtocolVersion.NEWEST_SUPPORTED);
+        final Cluster.Builder builder = Cluster.builder().withClusterName(this.catalogShardName);
 
         // Contact points are required
         final String contactPointsString = this.configuration.get(CONTACT_POINTS_KEY);
