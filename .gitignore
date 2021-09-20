@@ -77,8 +77,3 @@ metacat-functional-tests/metacat-test-cluster/build/
 secrets/signing-key
 
 docker-credential-pass
-
-#EPAM
-.java-version
-.run
-*.tgz

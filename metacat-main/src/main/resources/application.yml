@@ -36,7 +36,7 @@ metacat:
   swagger:
     enabled: true
   elasticsearch:
-    enabled: false
+    enabled: true
     cluster:
       name: docker-cluster
       port: 9300
