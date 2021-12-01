@@ -141,7 +141,9 @@ configure(javaProjects) {
             dependency("org.apache.pig:pig:0.14.0")
             dependency("org.codehaus.gpars:gpars:1.2.1")
             /**es 5.4.1 dependencies*/
-            dependency("org.elasticsearch.client:transport:5.4.1")
+            dependency("org.elasticsearch.client:elasticsearch-rest-high-level-client:7.15.2")
+            dependency("org.elasticsearch.client:elasticsearch-rest-client:7.15.2")
+            dependency("org.elasticsearch:elasticsearch:7.15.2")
             dependency("net.snowflake:snowflake-jdbc:3.4.2")
             dependency("com.esotericsoftware.kryo:kryo:2.22")
             dependency("org.apache.iceberg:iceberg-spark-runtime:${iceberg_version}")

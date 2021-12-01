@@ -37,32 +37,40 @@ import org.elasticsearch.ElasticsearchTimeoutException;
 import org.elasticsearch.action.FailedNodeException;
 import org.elasticsearch.action.admin.indices.refresh.RefreshRequest;
 import org.elasticsearch.action.bulk.BulkItemResponse;
-import org.elasticsearch.action.bulk.BulkRequestBuilder;
+import org.elasticsearch.action.bulk.BulkRequest;
 import org.elasticsearch.action.bulk.BulkResponse;
+import org.elasticsearch.action.delete.DeleteRequest;
+import org.elasticsearch.action.get.GetRequest;
 import org.elasticsearch.action.get.GetResponse;
-import org.elasticsearch.action.index.IndexRequestBuilder;
-import org.elasticsearch.action.search.SearchRequestBuilder;
+import org.elasticsearch.action.index.IndexRequest;
+import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.action.search.SearchScrollRequest;
 import org.elasticsearch.action.search.SearchType;
-import org.elasticsearch.client.Client;
+import org.elasticsearch.action.update.UpdateRequest;
+import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.Requests;
+import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.client.transport.NoNodeAvailableException;
-import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.common.util.CancellableThreads;
 import org.elasticsearch.common.util.concurrent.EsRejectedExecutionException;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.common.xcontent.XContentType;
+import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.node.NodeClosedException;
 import org.elasticsearch.search.SearchHit;
+import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.transport.ReceiveTimeoutTransportException;
 import org.elasticsearch.transport.TransportException;
 import org.joda.time.Instant;
 
 import javax.annotation.Nullable;
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -74,7 +82,7 @@ import java.util.stream.Collectors;
  * Utility class for index, update, delete metacat doc from elastic search.
  */
 @Slf4j
-public class ElasticSearchUtilImpl implements ElasticSearchUtil {
+public class ElasticSearch7UtilImpl implements ElasticSearchUtil {
     private static final Retryer<Void> RETRY_ES_PUBLISH = RetryerBuilder.<Void>newBuilder()
         .retryIfExceptionOfType(FailedNodeException.class)
         .retryIfExceptionOfType(NodeClosedException.class)
@@ -88,14 +96,12 @@ public class ElasticSearchUtilImpl implements ElasticSearchUtil {
         .withStopStrategy(StopStrategies.stopAfterAttempt(3))
         .build();
     private static final int NO_OF_CONFLICT_RETRIES = 3;
-    private final Client client;
+    private final RestHighLevelClient client;
     private final String esIndex;
     private final Config config;
     private final MetacatJson metacatJson;
     private XContentType contentType = Requests.INDEX_CONTENT_TYPE;
     private final Registry registry;
-    private final TimeValue esCallTimeout;
-    private final TimeValue esBulkCallTimeout;
 
     /**
      * Constructor.
@@ -105,8 +111,8 @@ public class ElasticSearchUtilImpl implements ElasticSearchUtil {
      * @param metacatJson         json utility
      * @param registry            spectator registry
      */
-    public ElasticSearchUtilImpl(
-        @Nullable final Client client,
+    public ElasticSearch7UtilImpl(
+        @Nullable final RestHighLevelClient client,
         final Config config,
         final MetacatJson metacatJson,
         final Registry registry) {
@@ -115,8 +121,6 @@ public class ElasticSearchUtilImpl implements ElasticSearchUtil {
         this.metacatJson = metacatJson;
         this.esIndex = config.getEsIndex();
         this.registry = registry;
-        this.esCallTimeout = TimeValue.timeValueSeconds(config.getElasticSearchCallTimeout());
-        this.esBulkCallTimeout = TimeValue.timeValueSeconds(config.getElasticSearchBulkCallTimeout());
     }
 
     /**
@@ -126,7 +130,8 @@ public class ElasticSearchUtilImpl implements ElasticSearchUtil {
     public void delete(final String type, final String id) {
         try {
             RETRY_ES_PUBLISH.call(() -> {
-                client.prepareDelete(esIndex, type, id).execute().actionGet(esCallTimeout);
+                final DeleteRequest deleteRequest = new DeleteRequest(esIndex, id);
+                client.delete(deleteRequest, RequestOptions.DEFAULT);
                 return null;
             });
         } catch (Exception e) {
@@ -196,8 +201,11 @@ public class ElasticSearchUtilImpl implements ElasticSearchUtil {
                     .field(ElasticSearchDoc.Field.TIMESTAMP, java.time.Instant.now().toEpochMilli())
                     .field(ElasticSearchDoc.Field.USER,
                     metacatRequestContext.getUserName()).endObject();
-                client.prepareUpdate(esIndex, type, id)
-                    .setRetryOnConflict(NO_OF_CONFLICT_RETRIES).setDoc(builder).get(esCallTimeout);
+
+                UpdateRequest request = new UpdateRequest(esIndex, id)
+                    .retryOnConflict(NO_OF_CONFLICT_RETRIES)
+                    .doc(builder);
+                client.update(request, RequestOptions.DEFAULT);
                 ensureMigrationByCopy(type, Collections.singletonList(id));
                 return null;
             });
@@ -235,26 +243,28 @@ public class ElasticSearchUtilImpl implements ElasticSearchUtil {
     private void updateDocs(final String type, final List<String> ids, final ObjectNode node) {
         try {
             RETRY_ES_PUBLISH.call(() -> {
-                final BulkRequestBuilder bulkRequest = client.prepareBulk();
+                final BulkRequest request = new BulkRequest();
                 ids.forEach(id -> {
-                    bulkRequest.add(client.prepareUpdate(esIndex, type, id)
-                        .setRetryOnConflict(NO_OF_CONFLICT_RETRIES)
-                        .setDoc(metacatJson.toJsonAsBytes(node), XContentType.JSON));
+                    final UpdateRequest updateRequest = new UpdateRequest(esIndex, id)
+                        .retryOnConflict(NO_OF_CONFLICT_RETRIES)
+                        .doc(metacatJson.toJsonAsBytes(node), XContentType.JSON);
+                    request.add(updateRequest);
                 });
-                final BulkResponse bulkResponse = bulkRequest.execute().actionGet(esBulkCallTimeout);
-                if (bulkResponse.hasFailures()) {
-                    for (BulkItemResponse item : bulkResponse.getItems()) {
-                        if (item.isFailed()) {
-                            handleException("ElasticSearchUtil.updateDocs.item", type, item.getId(),
-                                item.getFailure().getCause(), Metrics.CounterElasticSearchUpdate.getMetricName());
-                        }
-                    }
+                final BulkResponse bulkItemResponses = client.bulk(request, RequestOptions.DEFAULT);
+                if (bulkItemResponses.hasFailures()) {
+                    Arrays
+                        .stream(bulkItemResponses.getItems())
+                        .filter(BulkItemResponse::isFailed)
+                        .forEach(failedItem -> {
+                            handleException("ElasticSearchUtil.updateDocs.item", type, failedItem.getId(),
+                                failedItem.getFailure().getCause(),
+                                Metrics.CounterElasticSearchUpdate.getMetricName());
+                    });
                 }
                 return null;
             });
         } catch (Exception e) {
-            handleException("ElasticSearchUtil.updatDocs", type, ids, e,
-                Metrics.CounterElasticSearchBulkUpdate.getMetricName());
+
         }
     }
 
@@ -314,15 +324,22 @@ public class ElasticSearchUtilImpl implements ElasticSearchUtil {
         List<String> ids = Lists.newArrayList();
         // Run the query and get the response.
         if (dataUri != null) {
-            final SearchRequestBuilder request = client.prepareSearch(esIndex)
-                .setTypes(type)
-                .setSearchType(SearchType.QUERY_THEN_FETCH)
-                .setQuery(QueryBuilders.termQuery("serde.uri", dataUri))
-                .setSize(Integer.MAX_VALUE)
-                .setFetchSource(false);
-            final SearchResponse response = request.execute().actionGet(esCallTimeout);
-            if (response.getHits().getHits().length != 0) {
-                ids = getIds(response);
+            final SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder()
+                .query(QueryBuilders.termQuery("serde.uri", dataUri))
+                .size(Integer.MAX_VALUE)
+                .fetchSource(false);
+            final SearchRequest request = new SearchRequest(esIndex)
+                .types(type)
+                .searchType(SearchType.QUERY_THEN_FETCH).source(searchSourceBuilder);
+
+            final SearchResponse response;
+            try {
+                response = client.search(request, RequestOptions.DEFAULT);
+                if (response.getHits().getHits().length != 0) {
+                    ids = getIds(response);
+                }
+            } catch (IOException e) {
+                log.error("Elasticsearch getTableIdsByUri failed for URI {}", dataUri);
             }
         }
         return ids;
@@ -341,16 +358,24 @@ public class ElasticSearchUtilImpl implements ElasticSearchUtil {
             .mustNot(QueryBuilders.termsQuery("name.qualifiedName.tree", excludeQualifiedNames));
 
         // Run the query and get the response.
-        final SearchRequestBuilder request = client.prepareSearch(esIndex)
-            .setTypes(type)
-            .setSearchType(SearchType.QUERY_THEN_FETCH)
-            .setQuery(queryBuilder)
-            .setSize(Integer.MAX_VALUE)  // TODO May break if too many tables returned back, change to Scroll
-            .setFetchSource(false);
-        final SearchResponse response = request.execute().actionGet(esCallTimeout);
-        if (response.getHits().getHits().length != 0) {
-            ids = getIds(response);
+        final SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder()
+            .size(Integer.MAX_VALUE)
+            .fetchSource(false)
+            .query(queryBuilder);
+        final SearchRequest request = new SearchRequest(esIndex)
+            .types(type)
+            .searchType(SearchType.QUERY_THEN_FETCH)
+            .source(searchSourceBuilder);
+        final SearchResponse response;
+        try {
+            response = client.search(request, RequestOptions.DEFAULT);
+            if (response.getHits().getHits().length != 0) {
+                ids = getIds(response);
+            }
+        } catch (IOException e) {
+            log.error("Elasticsearch getTableIdsByUri failed for Query {}", queryBuilder.toString());
         }
+
         return ids;
     }
 
@@ -362,18 +387,25 @@ public class ElasticSearchUtilImpl implements ElasticSearchUtil {
         List<String> result = Lists.newArrayList();
         // Run the query and get the response.
         final QueryBuilder queryBuilder = QueryBuilders.boolQuery()
-            .must(QueryBuilders.termQuery("name.qualifiedName.tree", qualifiedName))
+            .must(QueryBuilders.termQuery("name.qualifiedName.tree", qualifiedName.toString()))
             .must(QueryBuilders.termQuery("deleted_", false));
-        final SearchRequestBuilder request = client.prepareSearch(esIndex)
-            .setTypes(type)
-            .setSearchType(SearchType.QUERY_THEN_FETCH)
-            .setQuery(queryBuilder)
-            .setSize(Integer.MAX_VALUE)
-            .setFetchSource(false);
-        final SearchResponse response = request.execute().actionGet(esCallTimeout);
-        if (response.getHits().getHits().length != 0) {
-            result = getIds(response);
+        final SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder()
+            .size(Integer.MAX_VALUE)
+            .fetchSource(false)
+            .query(queryBuilder);
+        final SearchRequest request = new SearchRequest(esIndex)
+            .searchType(SearchType.DEFAULT)
+            .source(searchSourceBuilder);
+        final SearchResponse response;
+        try {
+            response = client.search(request, RequestOptions.DEFAULT);
+            if (response.getHits().getHits().length != 0) {
+                result = getIds(response);
+            }
+        } catch (IOException e) {
+            log.error("Elasticsearch getTableIdsByUri failed for QualifiedName {}", qualifiedName);
         }
+
         return result;
     }
 
@@ -398,15 +430,23 @@ public class ElasticSearchUtilImpl implements ElasticSearchUtil {
             .must(QueryBuilders.rangeQuery(ElasticSearchDoc.Field.TIMESTAMP).lte(marker.getMillis()))
             .mustNot(QueryBuilders.termsQuery("name.qualifiedName.tree", excludeNames))
             .mustNot(QueryBuilders.termQuery("refreshMarker_", marker.toString()));
-        final SearchRequestBuilder request = client.prepareSearch(esIndex)
-            .setTypes(type)
-            .setSearchType(SearchType.QUERY_THEN_FETCH)
-            .setQuery(queryBuilder)
-            .setSize(Integer.MAX_VALUE);
-        final SearchResponse response = request.execute().actionGet(esCallTimeout);
-        if (response.getHits().getHits().length != 0) {
-            result.addAll(parseResponse(response, valueType));
+        final SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder()
+            .size(Integer.MAX_VALUE)
+            .query(queryBuilder);
+        final SearchRequest request = new SearchRequest(esIndex)
+            .searchType(SearchType.QUERY_THEN_FETCH)
+            .types(type)
+            .source(searchSourceBuilder);
+        final SearchResponse response;
+        try {
+            response = client.search(request, RequestOptions.DEFAULT);
+            if (response.getHits().getHits().length != 0) {
+                result.addAll(parseResponse(response, valueType));
+            }
+        } catch (IOException e) {
+            log.error("Elasticsearch getQualifiedNamesByMarkerByNames failed for query {}", queryBuilder.toString());
         }
+
         return result;
     }
 
@@ -415,7 +455,12 @@ public class ElasticSearchUtilImpl implements ElasticSearchUtil {
      */
     @Override
     public void refresh() {
-        client.admin().indices().refresh(new RefreshRequest(esIndex)).actionGet();
+        try {
+            client.indices().refresh(new RefreshRequest(esIndex), RequestOptions.DEFAULT);
+        } catch (IOException e) {
+            log.error("Refresh failed with error {}", e.getCause().getMessage());
+        }
+
     }
 
     /**
@@ -432,9 +477,14 @@ public class ElasticSearchUtilImpl implements ElasticSearchUtil {
     @Override
     public ElasticSearchDoc get(final String type, final String id, final String index) {
         ElasticSearchDoc result = null;
-        final GetResponse response = client.prepareGet(index, type, id).execute().actionGet(esCallTimeout);
-        if (response.isExists()) {
-            result = parse(response);
+        GetResponse response = null;
+        try {
+            response = client.get(new GetRequest(index, type, id), RequestOptions.DEFAULT);
+            if (response.isExists()) {
+                result = parse(response);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
         }
         return result;
     }
@@ -445,27 +495,34 @@ public class ElasticSearchUtilImpl implements ElasticSearchUtil {
     @Override
     public void delete(final MetacatRequestContext metacatRequestContext, final String type,
                        final boolean softDelete) {
-        SearchResponse response = client.prepareSearch(esIndex)
-            .setSearchType(SearchType.QUERY_THEN_FETCH)
-            .setScroll(new TimeValue(config.getElasticSearchScrollTimeout()))
-            .setSize(config.getElasticSearchScrollFetchSize())
-            .setQuery(QueryBuilders.termQuery("_type", type))
-            .setFetchSource(false)
-            .execute()
-            .actionGet(esCallTimeout);
-        while (true) {
-            response = client.prepareSearchScroll(response.getScrollId())
-                .setScroll(new TimeValue(config.getElasticSearchScrollTimeout())).execute().actionGet(esCallTimeout);
-            //Break condition: No hits are returned
-            if (response.getHits().getHits().length == 0) {
-                break;
+        final SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder()
+            .query(QueryBuilders.termQuery("_type", type))
+            .fetchSource(false).size(config.getElasticSearchScrollFetchSize());
+        final SearchRequest request = new SearchRequest(esIndex)
+            .searchType(SearchType.QUERY_THEN_FETCH)
+            .scroll(new TimeValue(config.getElasticSearchScrollTimeout()))
+            .source(searchSourceBuilder);
+        SearchResponse response = null;
+        try {
+            response = client.search(request, RequestOptions.DEFAULT);
+            while (true) {
+                response = client.scroll(
+                    new SearchScrollRequest(response.getScrollId())
+                        .scroll(new TimeValue(config.getElasticSearchScrollTimeout())),
+                    RequestOptions.DEFAULT);
+                //Break condition: No hits are returned
+                if (response.getHits().getHits().length == 0) {
+                    break;
+                }
+                final List<String> ids = getIds(response);
+                if (softDelete) {
+                    softDelete(type, ids, metacatRequestContext);
+                } else {
+                    delete(type, ids);
+                }
             }
-            final List<String> ids = getIds(response);
-            if (softDelete) {
-                softDelete(type, ids, metacatRequestContext);
-            } else {
-                delete(type, ids);
-            }
+        } catch (IOException e) {
+            log.error("ElasticSearch7.delete failed with error {}", e.getCause().getMessage());
         }
     }
 
@@ -502,7 +559,7 @@ public class ElasticSearchUtilImpl implements ElasticSearchUtil {
                 source.put("error", error);
                 source.put("message", logMessage);
                 source.put("details", Throwables.getStackTraceAsString(ex));
-                client.prepareIndex(index, "metacat-log").setSource(source).execute().actionGet(esCallTimeout);
+                client.index(new IndexRequest(index, "metacat-log").source(source), RequestOptions.DEFAULT);
             } catch (Exception e) {
                 registry.counter(registry.createId(Metrics.CounterElasticSearchLog.getMetricName())
                     .withTags(Metrics.tagStatusFailureMap)).increment();
@@ -519,15 +576,23 @@ public class ElasticSearchUtilImpl implements ElasticSearchUtil {
     @Override
     public List<TableDto> simpleSearch(final String searchString) {
         final List<TableDto> result = Lists.newArrayList();
-        final SearchResponse response = client.prepareSearch(esIndex)
-            .setTypes(ElasticSearchDoc.Type.table.name())
-            .setSearchType(SearchType.QUERY_THEN_FETCH)
-            .setQuery(QueryBuilders.termQuery("_all", searchString))
-            .setSize(Integer.MAX_VALUE)
-            .execute()
-            .actionGet(esCallTimeout);
-        if (response.getHits().getHits().length != 0) {
-            result.addAll(parseResponse(response, TableDto.class));
+        final SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder()
+            //TODO: Refactor this separately since this field was removed.
+    // https://www.elastic.co/guide/en/elasticsearch/reference/7.15/breaking-changes-7.0.html#all-meta-field-removed
+            .query(QueryBuilders.termQuery("_all", searchString))
+            .size(Integer.MAX_VALUE);
+        final SearchRequest request = new SearchRequest(esIndex)
+            .types(ElasticSearchDoc.Type.table.name())
+            .searchType(SearchType.QUERY_THEN_FETCH)
+            .source(searchSourceBuilder);
+        SearchResponse response = null;
+        try {
+            response = client.search(request, RequestOptions.DEFAULT);
+            if (response.getHits().getHits().length != 0) {
+                result.addAll(parseResponse(response, TableDto.class));
+            }
+        } catch (IOException e) {
+            log.error("ElasticSearch7.simpleSearch failed for {} with error {}", searchString, e.getCause().getMessage());
         }
         return result;
     }
@@ -541,9 +606,10 @@ public class ElasticSearchUtilImpl implements ElasticSearchUtil {
     private void hardDeleteDoc(final String type, final List<String> ids) {
         try {
             RETRY_ES_PUBLISH.call(() -> {
-                final BulkRequestBuilder bulkRequest = client.prepareBulk();
-                ids.forEach(id -> bulkRequest.add(client.prepareDelete(esIndex, type, id)));
-                final BulkResponse bulkResponse = bulkRequest.execute().actionGet(esBulkCallTimeout);
+                final BulkRequest request = new BulkRequest();
+
+                ids.forEach(id -> request.add(new DeleteRequest(esIndex, id)));
+                final BulkResponse bulkResponse = client.bulk(request, RequestOptions.DEFAULT);
                 log.info("Deleting metadata of type {} with count {}", type, ids.size());
                 if (bulkResponse.hasFailures()) {
                     for (BulkItemResponse item : bulkResponse.getItems()) {
@@ -638,14 +704,14 @@ public class ElasticSearchUtilImpl implements ElasticSearchUtil {
         final MetacatRequestContext metacatRequestContext) {
         try {
             RETRY_ES_PUBLISH.call(() -> {
-                final BulkRequestBuilder bulkRequest = client.prepareBulk();
+                final BulkRequest request = new BulkRequest();
+
                 final XContentBuilder builder = XContentFactory.contentBuilder(contentType);
                 builder.startObject().field(ElasticSearchDoc.Field.DELETED, true)
                     .field(ElasticSearchDoc.Field.TIMESTAMP, java.time.Instant.now().toEpochMilli())
                     .field(ElasticSearchDoc.Field.USER, metacatRequestContext.getUserName()).endObject();
-                ids.forEach(id -> bulkRequest.add(client.prepareUpdate(esIndex, type, id)
-                    .setRetryOnConflict(NO_OF_CONFLICT_RETRIES).setDoc(builder)));
-                final BulkResponse bulkResponse = bulkRequest.execute().actionGet(esBulkCallTimeout);
+                ids.forEach(id -> request.add(new UpdateRequest(esIndex, id).retryOnConflict(NO_OF_CONFLICT_RETRIES).doc(builder)));
+                final BulkResponse bulkResponse = client.bulk(request, RequestOptions.DEFAULT);
                 if (bulkResponse.hasFailures()) {
                     for (BulkItemResponse item : bulkResponse.getItems()) {
                         if (item.isFailed()) {
@@ -673,9 +739,9 @@ public class ElasticSearchUtilImpl implements ElasticSearchUtil {
     private void saveToIndex(final String type, final String id, final ElasticSearchDoc doc, final String index) {
         try {
             RETRY_ES_PUBLISH.call(() -> {
-                final IndexRequestBuilder indexRequestBuilder = prepareIndexRequest(index, type, doc);
+                final IndexRequest indexRequestBuilder = prepareIndexRequest(index, type, doc);
                 if (indexRequestBuilder != null) {
-                    indexRequestBuilder.execute().actionGet(esCallTimeout);
+                    client.index(indexRequestBuilder, RequestOptions.DEFAULT);
                 }
                 return null;
             });
@@ -716,16 +782,17 @@ public class ElasticSearchUtilImpl implements ElasticSearchUtil {
             try {
 
                 RETRY_ES_PUBLISH.call(() -> {
-                    final BulkRequestBuilder bulkRequest = client.prepareBulk();
+
+                    final BulkRequest bulkRequest = new BulkRequest();
                     for (ElasticSearchDoc doc : docs) {
-                        final IndexRequestBuilder indexRequestBuilder = prepareIndexRequest(index, type, doc);
+                        final IndexRequest indexRequestBuilder = prepareIndexRequest(index, type, doc);
                         if (indexRequestBuilder != null) {
                             bulkRequest.add(indexRequestBuilder);
                         }
                     }
 
                     if (bulkRequest.numberOfActions() > 0) {
-                        final BulkResponse bulkResponse = bulkRequest.execute().actionGet(esBulkCallTimeout);
+                        final BulkResponse bulkResponse = client.bulk(bulkRequest, RequestOptions.DEFAULT);
                         log.info("Bulk saving metadata of index {} type {} with size {}.",
                             index, type, docs.size());
                         if (bulkResponse.hasFailures()) {
@@ -747,10 +814,10 @@ public class ElasticSearchUtilImpl implements ElasticSearchUtil {
         }
     }
 
-    IndexRequestBuilder prepareIndexRequest(final String index,
-                                            final String type,
-                                            final ElasticSearchDoc doc) {
-        return client.prepareIndex(index, type, doc.getId()).setSource(toJsonString(doc), XContentType.JSON);
+    IndexRequest prepareIndexRequest(final String index,
+                                     final String type,
+                                     final ElasticSearchDoc doc) {
+        return new IndexRequest(index).id(doc.getId()).source(toJsonObject(doc), XContentType.JSON);
     }
 
 }
