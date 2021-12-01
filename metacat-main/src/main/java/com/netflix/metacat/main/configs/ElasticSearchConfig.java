@@ -27,26 +27,24 @@ import com.netflix.metacat.main.services.CatalogService;
 import com.netflix.metacat.main.services.DatabaseService;
 import com.netflix.metacat.main.services.PartitionService;
 import com.netflix.metacat.main.services.TableService;
+import com.netflix.metacat.main.services.search.ElasticSearch7UtilImpl;
 import com.netflix.metacat.main.services.search.ElasticSearchCatalogTraversalAction;
 import com.netflix.metacat.main.services.search.ElasticSearchEventHandlers;
 import com.netflix.metacat.main.services.search.ElasticSearchRefresh;
 import com.netflix.metacat.main.services.search.ElasticSearchUtil;
-import com.netflix.metacat.main.services.search.ElasticSearchUtilImpl;
 import com.netflix.spectator.api.Registry;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
-import org.elasticsearch.client.Client;
-import org.elasticsearch.client.transport.TransportClient;
-import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.transport.InetSocketTransportAddress;
-import org.elasticsearch.transport.client.PreBuiltTransportClient;
+import org.apache.http.HttpHost;
+import org.elasticsearch.client.RestClient;
+import org.elasticsearch.client.RestClientBuilder;
+import org.elasticsearch.client.RestHighLevelClient;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.net.InetAddress;
-import java.net.UnknownHostException;
+import java.util.stream.StreamSupport;
 
 /**
  * Configuration for ElasticSearch which triggers when metacat.elasticsearch.enabled is true.
@@ -66,41 +64,25 @@ public class ElasticSearchConfig {
      * @return Configured client or error
      */
     @Bean
-    @ConditionalOnMissingBean(Client.class)
-    public Client elasticSearchClient(final Config config) {
+    @ConditionalOnMissingBean(RestHighLevelClient.class)
+    public RestHighLevelClient elasticSearchClient(final Config config) {
         final String clusterName = config.getElasticSearchClusterName();
         if (StringUtils.isBlank(clusterName)) {
             throw new IllegalStateException("No cluster name set. Unable to continue");
         }
-        final Settings settings = Settings.builder()
-            .put("cluster.name", clusterName)
-            .put("client.transport.sniff", true) //to dynamically add new hosts and remove old ones
-            .put("transport.tcp.connect_timeout", "60s")
-            .build();
-        final TransportClient client = new PreBuiltTransportClient(settings);
         // Add the transport address if exists
         final String clusterNodesStr = config.getElasticSearchClusterNodes();
         if (StringUtils.isNotBlank(clusterNodesStr)) {
-            final int port = config.getElasticSearchClusterPort();
-            final Iterable<String> clusterNodes = Splitter.on(',').split(clusterNodesStr);
-            clusterNodes.
-                forEach(
-                    clusterNode -> {
-                        try {
-                            client.addTransportAddress(
-                                new InetSocketTransportAddress(InetAddress.getByName(clusterNode), port)
-                            );
-                        } catch (UnknownHostException exception) {
-                            log.error("Skipping unknown host {}", clusterNode);
-                        }
-                    }
-                );
+            throw new IllegalStateException("No cluster nodes set. Unable to continue");
         }
-
-        if (client.transportAddresses().isEmpty()) {
-            throw new IllegalStateException("No Elasticsearch cluster nodes added. Unable to create client.");
-        }
-        return client;
+        final int port = config.getElasticSearchClusterPort();
+        final Iterable<String> clusterNodes = Splitter.on(',').split(clusterNodesStr);
+        final RestClientBuilder restClientBuilder = RestClient.builder(
+            StreamSupport
+                .stream(clusterNodes.spliterator(), false)
+                .map(clusterNode -> new HttpHost(clusterNode, port, "http"))
+                .toArray(HttpHost[]::new));
+        return new RestHighLevelClient(restClientBuilder);
     }
 
     /**
@@ -114,12 +96,12 @@ public class ElasticSearchConfig {
      */
     @Bean
     public ElasticSearchUtil elasticSearchUtil(
-        final Client client,
+        final RestHighLevelClient client,
         final Config config,
         final MetacatJson metacatJson,
         final Registry registry
     ) {
-        return new ElasticSearchUtilImpl(client, config, metacatJson, registry);
+        return new ElasticSearch7UtilImpl(client, config, metacatJson, registry);
     }
 
     /**

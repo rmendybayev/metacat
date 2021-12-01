@@ -30,7 +30,9 @@ dependencies {
     compile(project(":metacat-common"))
     compile(project(":metacat-common-server"))
     compile(project(":metacat-thrift"))
-    compile("org.elasticsearch.client:transport")
+    compile("org.elasticsearch.client:elasticsearch-rest-high-level-client")
+    compile("org.elasticsearch.client:elasticsearch-rest-client")
+    compile("org.elasticsearch:elasticsearch")
 
     compile("com.amazonaws:aws-java-sdk-sns")
     compile("joda-time:joda-time")
@@ -85,7 +87,9 @@ dependencies {
     testCompile(project(":metacat-testdata-provider"))
     testCompile("io.airlift:testing-mysql-server")
     testCompile("org.apache.logging.log4j:log4j-core")
-
+//    testImplementation group: 'org.elasticsearch.test', name: 'framework', version: '7.15.2'
+    // https://mvnrepository.com/artifact/org.elasticsearch.plugin/transport-netty4-client
+//    testImplementation 'org.elasticsearch.plugin:transport-netty4-client:7.15.2'
 }
 
 test {
