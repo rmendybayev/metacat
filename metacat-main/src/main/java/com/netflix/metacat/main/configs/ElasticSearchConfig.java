@@ -27,28 +27,23 @@ import com.netflix.metacat.main.services.CatalogService;
 import com.netflix.metacat.main.services.DatabaseService;
 import com.netflix.metacat.main.services.PartitionService;
 import com.netflix.metacat.main.services.TableService;
+import com.netflix.metacat.main.services.search.ElasticSearch7UtilImpl;
 import com.netflix.metacat.main.services.search.ElasticSearchCatalogTraversalAction;
 import com.netflix.metacat.main.services.search.ElasticSearchEventHandlers;
 import com.netflix.metacat.main.services.search.ElasticSearchRefresh;
 import com.netflix.metacat.main.services.search.ElasticSearchUtil;
-import com.netflix.metacat.main.services.search.ElasticSearch7UtilImpl;
 import com.netflix.spectator.api.Registry;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 import org.apache.http.HttpHost;
-import org.elasticsearch.client.Client;
 import org.elasticsearch.client.RestClient;
 import org.elasticsearch.client.RestClientBuilder;
 import org.elasticsearch.client.RestHighLevelClient;
-import org.elasticsearch.client.transport.TransportClient;
-import org.elasticsearch.common.settings.Settings;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.util.stream.StreamSupport;
 
 /**
@@ -78,7 +73,7 @@ public class ElasticSearchConfig {
         // Add the transport address if exists
         final String clusterNodesStr = config.getElasticSearchClusterNodes();
         if (StringUtils.isNotBlank(clusterNodesStr)) {
-
+            throw new IllegalStateException("No cluster nodes set. Unable to continue");
         }
         final int port = config.getElasticSearchClusterPort();
         final Iterable<String> clusterNodes = Splitter.on(',').split(clusterNodesStr);
@@ -87,8 +82,7 @@ public class ElasticSearchConfig {
                 .stream(clusterNodes.spliterator(), false)
                 .map(clusterNode -> new HttpHost(clusterNode, port, "http"))
                 .toArray(HttpHost[]::new));
-        RestHighLevelClient newClient = new RestHighLevelClient(restClientBuilder);
-        return newClient;
+        return new RestHighLevelClient(restClientBuilder);
     }
 
     /**

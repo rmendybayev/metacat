@@ -202,7 +202,7 @@ public class ElasticSearch7UtilImpl implements ElasticSearchUtil {
                     .field(ElasticSearchDoc.Field.USER,
                     metacatRequestContext.getUserName()).endObject();
 
-                UpdateRequest request = new UpdateRequest(esIndex, id)
+                final UpdateRequest request = new UpdateRequest(esIndex, id)
                     .retryOnConflict(NO_OF_CONFLICT_RETRIES)
                     .doc(builder);
                 client.update(request, RequestOptions.DEFAULT);
@@ -592,7 +592,8 @@ public class ElasticSearch7UtilImpl implements ElasticSearchUtil {
                 result.addAll(parseResponse(response, TableDto.class));
             }
         } catch (IOException e) {
-            log.error("ElasticSearch7.simpleSearch failed for {} with error {}", searchString, e.getCause().getMessage());
+            log.error("ElasticSearch7.simpleSearch failed for {} with error {}",
+                searchString, e.getCause().getMessage());
         }
         return result;
     }
@@ -710,7 +711,10 @@ public class ElasticSearch7UtilImpl implements ElasticSearchUtil {
                 builder.startObject().field(ElasticSearchDoc.Field.DELETED, true)
                     .field(ElasticSearchDoc.Field.TIMESTAMP, java.time.Instant.now().toEpochMilli())
                     .field(ElasticSearchDoc.Field.USER, metacatRequestContext.getUserName()).endObject();
-                ids.forEach(id -> request.add(new UpdateRequest(esIndex, id).retryOnConflict(NO_OF_CONFLICT_RETRIES).doc(builder)));
+                ids.forEach(id -> request.add(
+                    new UpdateRequest(esIndex, id)
+                        .retryOnConflict(NO_OF_CONFLICT_RETRIES)
+                        .doc(builder)));
                 final BulkResponse bulkResponse = client.bulk(request, RequestOptions.DEFAULT);
                 if (bulkResponse.hasFailures()) {
                     for (BulkItemResponse item : bulkResponse.getItems()) {

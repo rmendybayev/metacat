@@ -29,6 +29,7 @@ import org.elasticsearch.client.Client
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.node.InternalSettingsPreparer
 import org.joda.time.Instant
+import spock.lang.Ignore
 import spock.lang.Shared
 import spock.lang.Specification
 import spock.lang.Unroll
@@ -40,6 +41,7 @@ import com.netflix.metacat.main.services.search.ElasticSearchDoc.Type
  * @since 1.1.0
  */
 //TODO: remove after setting up integration ElasticSearch test in real cluster or other form
+@Ignore
 class EmbeddedEsSpec extends Specification {
     @Shared
     Config config = Mock(Config)
