@@ -72,7 +72,7 @@ public class ElasticSearchConfig {
         }
         // Add the transport address if exists
         final String clusterNodesStr = config.getElasticSearchClusterNodes();
-        if (StringUtils.isNotBlank(clusterNodesStr)) {
+        if (StringUtils.isBlank(clusterNodesStr)) {
             throw new IllegalStateException("No cluster nodes set. Unable to continue");
         }
         final int port = config.getElasticSearchClusterPort();
