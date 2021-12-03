@@ -67,7 +67,11 @@ services:
                 -Dmetacat.service.tables.error.list.partitions.threshold=100
                 -Dmetacat.table.delete.noDeleteOnTags=do_not_drop
                 -Dmetacat.table.rename.noRenameOnTags=do_not_rename
-                -Dmetacat.event.updateIcebergTablePostEventEnabled=true'
+                -Dmetacat.event.updateIcebergTablePostEventEnabled=true
+                -Dmetacat.elasticsearch.enabled=true
+                -Dmetacat.elasticsearch.cluster.nodes=es01
+                -Dmetacat.elasticsearch.cluster.port=9200
+                -Dmetacat.elasticsearch.cluster.name=es-docker-cluster'
         labels:
           - "com.netflix.metacat.oss.test"
           - "com.netflix.metacat.oss.test.war"
@@ -121,6 +125,8 @@ services:
         memlock:
           soft: -1
           hard: -1
+      volumes:
+        - data01:/usr/share/elasticsearch/data
       ports:
         - 9200:9200
     storage-barrier:
@@ -150,3 +156,6 @@ services:
             - TIMEOUT=360
         labels:
           - "com.netflix.metacat.oss.test"
+volumes:
+  data01:
+    driver: local

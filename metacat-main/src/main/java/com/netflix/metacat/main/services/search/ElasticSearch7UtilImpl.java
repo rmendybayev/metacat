@@ -821,7 +821,7 @@ public class ElasticSearch7UtilImpl implements ElasticSearchUtil {
     IndexRequest prepareIndexRequest(final String index,
                                      final String type,
                                      final ElasticSearchDoc doc) {
-        return new IndexRequest(index).id(doc.getId()).source(toJsonObject(doc), XContentType.JSON);
+        return new IndexRequest(index).id(doc.getId()).source(toJsonString(doc), XContentType.JSON);
     }
 
 }

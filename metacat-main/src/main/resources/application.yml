@@ -39,7 +39,7 @@ metacat:
     enabled: false
     cluster:
       name: docker-cluster
-      port: 9300
+      port: 9200
       nodes: es-node
     index:
       name: metacat-es
